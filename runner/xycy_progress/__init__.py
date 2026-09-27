@@ -371,6 +371,9 @@ _HOUSE_PATTERNS = (
      lambda m: "the argument `" + m.group(1) + "` (it is required)"),
     ("conflictsWith", re.compile(r'method "?([A-Za-z0-9_]+)"? is not supported', re.I),
      lambda m: "this application build - it does not implement " + m.group(1)),
+    # XY-EXTRAARG - an add-on older than its server refuses an optional argument (measured 23 Sep 2026)
+    ("conflictsWith", re.compile(r'([A-Za-z_][\w.]*\(\) takes \d+ positional arguments? but \d+ (?:were|was) given)'),
+     lambda m: "the add-on installed on this computer, which is older than the server - it refused an optional argument (" + m.group(1) + "), so leave optional arguments such as timeout out"),
     ("causes", re.compile(r"('[^']+' object has no attribute '[^']+')", re.I), None),
     ("causes", re.compile(r"(cannot import name '[^']+' from '[^']+')", re.I), None),
     ("causes", re.compile(r'\b((?:KeyError|AttributeError|TypeError|ValueError|IndexError): [^\n"\\]{1,120})'), None),
@@ -562,7 +565,7 @@ def pre_tool_call(**kwargs):
     try:
         _note_shot_target(kwargs.get("args"))
     except Exception as _xy_e:
-        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:565')
+        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:568')
     _WAITING["on"], _WAITING["since"] = (kwargs.get("tool_name") or "a tool"), time.time()
     _COUNTS["tool_calls"] += 1
     call_id = kwargs.get("tool_call_id")

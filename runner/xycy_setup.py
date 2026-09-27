@@ -656,6 +656,25 @@ def ollama_context_length():
     return str(max(CTX_FLOOR, min(CTX_CAP, want)))
 
 
+def _server_cwd(binary):
+    """XY-OLLAMACWD (25 Sep 2026) - the folder a long-lived server is started in.
+
+    A server started by this script inherits this script's folder as its working folder, and
+    this script lives inside the installed XYCY agent. MEASURED on Sean's PC: the `ollama serve`
+    started by XY-OLLAMASERVE kept running after the Bridge that started it had exited, and held
+    the installed XYCY folder open, so the next install of XYCY failed with "Permission
+    denied" on its own folder. The server is started in Ollama's own folder instead (the home
+    folder when that is unknown), which nothing ever needs to replace.
+    """
+    try:
+        d = os.path.dirname(os.path.abspath(binary)) if binary else ""
+        if d and os.path.isdir(d):
+            return d
+    except Exception as exc:  # noqa: BLE001 - said, then the home folder is used
+        sys.stderr.write("xycy_setup: could not use Ollama's folder as the working folder: %s\n" % exc)
+    return os.path.expanduser("~")
+
+
 def ollama_serve_env():
     """OLLAMA_SERVE_ENV plus the window and the slot count this computer can afford."""
     env = dict(OLLAMA_SERVE_ENV)
@@ -680,7 +699,7 @@ def start_ollama(binary):
             # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP - start_new_session is POSIX only,
             # and without detaching, the server dies with this setup process.
             subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, env=env,
+                             stderr=subprocess.DEVNULL, env=env, cwd=_server_cwd(cmd[0]),
                              creationflags=0x00000008 | 0x00000200)
             return True, ""
         # NOT `open -a Ollama.app` on macOS, however much more like a person's own start that
@@ -692,7 +711,7 @@ def start_ollama(binary):
         # binary is started directly on every platform.
         subprocess.Popen([binary, "serve"], stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         env=env, start_new_session=True)
+                         env=env, start_new_session=True, cwd=_server_cwd(binary))
         return True, ""
     except Exception as exc:
         return False, str(exc)
@@ -736,7 +755,7 @@ def work_install_ollama(job_id, args):
                       path=here, error="Ollama is installed at %s but would not start: %s"
                                        % (here, why))
             return
-        for _ in range(45):
+        for _i in range(45):
             time.sleep(1)
             info = http_json(OLLAMA_URL + "/api/version")
             if info:
@@ -759,6 +778,24 @@ def work_install_ollama(job_id, args):
                           message="Ollama %s was already installed here and is serving now"
                                   % info.get("version", ""))
                 return
+            # XY-OLLAMASERVE (25 Sep 2026) - MEASURED on Sean's PC: Ollama's own Windows app
+            # logged "Failed to start: Unable to init instance: Unspecified error" and exited
+            # without starting its server, so every press of Run or Start Ollama waited 45 s and
+            # failed. The server itself does not need the app: after 15 s with nothing
+            # answering, start `ollama serve` directly, once, with the same environment.
+            if os.name == "nt" and _i == 14:
+                try:
+                    _env = enriched_env()
+                    _env.update(ollama_serve_env())
+                    subprocess.Popen([here, "serve"], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env=_env, cwd=_server_cwd(here), creationflags=0x00000008 | 0x00000200)
+                    write_job(job_id, state="running", percent=40, phase="starting Ollama",
+                              path=here, message="Ollama's own app did not start its server, so "
+                                                 "XYCY is starting the server directly")
+                except Exception as exc:  # noqa: BLE001 - reported, then the wait goes on
+                    write_job(job_id, state="running", percent=40, phase="starting Ollama",
+                              path=here, message="starting the server directly failed too: %s" % exc)
         write_job(job_id, state="failed", ok=False, phase="not serving", path=here,
                   error="Ollama is installed at %s and was started, but nothing is answering "
                         "on %s. Start Ollama yourself, then press Re-check."
@@ -888,7 +925,7 @@ def work_install_ollama(job_id, args):
     try:
         subprocess.Popen([binary, "serve"], stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         env=env, start_new_session=True)
+                         env=env, start_new_session=True, cwd=_server_cwd(binary))
     except Exception as exc:
         write_job(job_id, state="failed", ok=False, phase="could not start", error=str(exc))
         return
@@ -1024,7 +1061,7 @@ def cmd_job(args):
                 try:
                     out.append(json.load(open(os.path.join(JOBS_DIR, name), encoding="utf-8")))
                 except Exception as _xy_e:
-                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_setup.py:1027')
+                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_setup.py:1064')
         print(json.dumps({"ok": True, "jobs": out}))
         return
     try:

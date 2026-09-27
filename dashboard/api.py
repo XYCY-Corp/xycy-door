@@ -128,7 +128,7 @@ except Exception:  # pragma: no cover - only when FastAPI is absent
     APIRouter = None
 
 # A blank page at :4850/xycy is a STALE door, not a broken one - this is the fingerprint.
-DOOR_VERSION = "0.7.5"
+DOOR_VERSION = "0.7.6"
 DOOR_PORT = int(os.environ.get("XYCY_DOOR_PORT", "4850"))
 
 # Who may knock. A browser sends its page's origin; anything not on this list is

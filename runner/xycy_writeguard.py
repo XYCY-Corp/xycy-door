@@ -41,6 +41,37 @@ WRITE_TOOLS = ("write_file", "patch", "edit_file", "str_replace", "apply_patch",
 CODE_SUFFIXES = (".py", ".rb", ".js", ".mjs", ".cjs", ".ps1", ".sh", ".bat", ".cmd", ".vbs")
 PATH_KEYS = ("path", "file_path", "filename", "file", "target", "resolved_path", "notebook_path")
 
+# XY-NOINSTALL (25 Sep 2026) - a step never installs software on the person's computer. MEASURED on
+# Sean's PC, curtain wall run 7 on Hermes: the wind step, unable to recalculate a workbook, ran
+# `winget install --id TheDocumentFoundation.LibreOffice --silent --accept-package-agreements
+# --accept-source-agreements --force` from its terminal. The 375 MB installer had downloaded and
+# the install had started when the run was stopped by hand. Installing software, and accepting its
+# licence, is the person's decision, never a step's. Python libraries are not covered here: the
+# document steps' own interpreter is provisioned by XYCY (XY-DOCLIBS2).
+COMMAND_TOOLS = ("terminal", "execute_code", "shell", "bash", "run_command", "powershell", "process")
+INSTALL_RE = re.compile(
+    r"\b(?:winget|choco|chocolatey|scoop)(?:\.exe)?\s+(?:install|upgrade|add)\b"
+    r"|\bmsiexec(?:\.exe)?\s+/[iapx]\b"
+    r"|\bbrew\s+(?:install|reinstall|upgrade|cask\s+install)\b"
+    r"|\b(?:apt|apt-get|dnf|yum|zypper|port|snap|flatpak)\s+install\b"
+    r"|\bpacman\s+-S\b"
+    r"|\b(?:Add-AppxPackage|Install-Package|Install-Module|Install-Script)\b"
+    r"|\bnpm\s+(?:i|install)\s+(?:-g|--global)\b"
+    r"|\bsoftwareupdate\s+(?:-i|--install)\b|\binstaller\s+-pkg\b"
+    r"|\bStart-Process\b[^\n]{0,200}\.(?:msi|msix|appx)\b"
+    # the same installers handed over as a list, as subprocess.run([...]) does
+    r"|[\"']\s*(?:winget|choco|scoop|brew|apt-get|apt|dnf|yum|msiexec)(?:\.exe)?[\"']\s*,\s*[\"'](?:install|upgrade|/i|/a|/p|/x)[\"']",
+    re.I)
+
+
+def install_command(tool, tool_input):
+    """The installer this call would run, or None."""
+    if tool not in COMMAND_TOOLS or not isinstance(tool_input, dict):
+        return None
+    text = " ".join(str(tool_input.get(k) or "") for k in ("command", "code", "cmd", "script", "input"))
+    m = INSTALL_RE.search(text)
+    return m.group(0) if m else None
+
 
 def norm(p):
     """An absolute, resolved, comparable path - or None when there was no path.
@@ -111,6 +142,16 @@ def main():
     if str(payload.get("hook_event_name") or "") not in ("pre_tool_call", ""):
         return 0
     tool = str(payload.get("tool_name") or "")
+    # XY-NOINSTALL - only inside an XYCY run, like every rule here.
+    if str(os.environ.get("XYCY_RUN_DIR") or "") or str(os.environ.get("XYCY_OUTPUTS_DIR") or ""):
+        inst = install_command(tool, payload.get("tool_input") or {})
+        if inst:
+            sys.stderr.write(
+                "XY-NOINSTALL: a step never installs software on this computer - `%s` refused. "
+                "Installing a program, and accepting its licence, is the person's decision. If this "
+                "step needs a program that is not here, finish what you can without it, name the "
+                "missing program in your gaps, and mark the step blocked.\n" % inst)
+            return 2
     if tool not in WRITE_TOOLS:
         return 0
     raw = wanted_path(payload.get("tool_input") or {})

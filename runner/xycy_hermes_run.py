@@ -2373,7 +2373,7 @@ def cmd_status(args):
     beat_at = (status or {}).get("updatedAt")
     beat_age = round(time.time() - beat_at, 1) if isinstance(beat_at, (int, float)) else None
     beat_fresh = bool(beat_age is not None and beat_age <= HZ_HEARTBEAT_STALE_SEC
-                      and (status or {}).get("state") not in ("finished", "failed", None))
+                      and (status or {}).get("state") not in ("finished", "failed", "stopped", None))   # XY-HZSTOPSAYS)
     any_process = process_alive or status_pid_alive
     # XY-HZWARMUP - a third witness, for the one window where neither of the other two can
     # speak: the run has been asked for, the supervisor wrote down when it started, and
@@ -2393,6 +2393,8 @@ def cmd_status(args):
     elif live_now and not any_process:
         why = ("no process from this run is still running, but the run wrote about itself "
                + str(beat_age) + "s ago and says it is " + str((status or {}).get("state")))
+    elif (not live_now) and (status or {}).get("state") == "stopped":   # XY-HZSTOPSAYS
+        why = "this run was stopped"
     elif (not live_now) and not finished:
         why = ("nothing from this run is running and "
                + ("it has not written about itself for " + str(beat_age) + "s"
@@ -2444,7 +2446,7 @@ def cmd_stop(args):
             try:
                 os.kill(pid, signal.SIGTERM)
             except Exception as _xy_e:
-                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2447')
+                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2449')
     for _ in range(20):
         if not alive(pid):
             break
@@ -2453,7 +2455,24 @@ def cmd_stop(args):
         try:
             os.killpg(os.getpgid(pid), signal.SIGKILL)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2456')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2458')
+    # XY-HZSTOPSAYS (26 Sep 2026) - the run's own status file says it was stopped. The stop kills the
+    # supervisor and Hermes with /F, so neither can write its last word, and hermes-status.json kept
+    # whatever the plugin wrote last. MEASURED on Sean's PC, the wind step on Hermes, stopped at 71
+    # minutes: the file still read state "waiting" afterwards, as though a model were thinking.
+    try:
+        _sp = os.path.join(project_dir, "runs", args.run_id, "hermes-status.json")
+        if os.path.isdir(os.path.dirname(_sp)):
+            _st = load_json(_sp) or {}
+            if not _st.get("finishedAt"):
+                _now = time.time()
+                _st.update({"state": "stopped", "stoppedAt": _now, "updatedAt": _now})
+                _tmp = _sp + ".stop.tmp"
+                with open(_tmp, "w", encoding="utf-8") as _h:
+                    json.dump(_st, _h)
+                os.replace(_tmp, _sp)
+    except Exception as _xy_e:
+        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:hzstopsays')
     print(json.dumps({"ok": True, "stopped": True, "pid": pid}))
 
 
@@ -2637,7 +2656,7 @@ def _wait_watching_for_stall(child, status_path, stop_path, log_path, run_dir=No
                                      "and has not touched its application for %d s. Ending the "
                                      "session; the verdict stands.\n" % int(STEP_DONE_GRACE))
                 except Exception as _xy_e:
-                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2640')
+                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2659')
                 try:
                     child.terminate()
                     try:
@@ -2646,7 +2665,7 @@ def _wait_watching_for_stall(child, status_path, stop_path, log_path, run_dir=No
                         child.kill()
                         child.wait(timeout=20)
                 except Exception as _xy_e:
-                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2649')
+                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2668')
                 code = child.returncode
                 return (code if code is not None else 0, False)
         # XY-HZSTALL2 - watch whatever it is waiting ON, not only the model. An empty waitingOn
@@ -2701,7 +2720,7 @@ def _wait_watching_for_stall(child, status_path, stop_path, log_path, run_dir=No
                              % ("the model" if waiting_on == "model" else "tool " + waiting_on,
                                 int(waited), limit))
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2704')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2723')
         try:
             child.terminate()
             try:
@@ -2710,7 +2729,7 @@ def _wait_watching_for_stall(child, status_path, stop_path, log_path, run_dir=No
                 child.kill()
                 child.wait(timeout=20)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2713')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2732')
         code = child.returncode
         return (code if code is not None else -1, True)
 
@@ -2848,7 +2867,7 @@ def _enforce_done_needs_a_call(run_dir, servers, log_path):
                 json.dump(data, handle, indent=1)
             changed.append(name)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2851')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2870')
     # XY-DONEZEROBASE - and the same for the BASE progress.json, which is the only place a
     # whole-workflow run ever writes a verdict.
     #
@@ -2910,7 +2929,7 @@ def _enforce_done_needs_a_call(run_dir, servers, log_path):
                              "rewritten as blocked, the claim kept in `claimed`.\n"
                              % ", ".join(changed))
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2913')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:2932')
     return changed
 
 
@@ -3013,7 +3032,7 @@ def _supervise(spec_path):
                            "wallClockSec": round(time.time() - run_started_at, 1),
                            "attempts": attempts}, h, indent=2)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3016')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3035')
     _write_attempts()
 
     for i in range(tries):
@@ -3035,7 +3054,7 @@ def _supervise(spec_path):
             if log not in (subprocess.DEVNULL,):
                 log.close()
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3038')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3057')
 
         st = load_json(status_path) or {}
         tools = int(((st.get("counts") or {}).get("tool_calls")) or 0)
@@ -3076,7 +3095,7 @@ def _supervise(spec_path):
             with open(status_path, "w", encoding="utf-8") as handle:
                 json.dump(st, handle, indent=2)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3079')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3098')
         # XY-RESUMEBLIND - do not send a model to continue a plan that is not there. A
         # per-step run has no RUN.md and no progress.json (it writes progress-<node>.json),
         # so the retry used to open two missing files and then decide for itself what the
@@ -3097,7 +3116,7 @@ def _supervise(spec_path):
                                  "unfinished; continuing from %s (attempt %d of %d)\n"
                                  % (_sr["spec"], i + 2, tries))
             except Exception as _xy_e:
-                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3100')
+                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3119')
             argv = list(argv)
             argv[2] = STEP_RESUME_PROMPT % _sr
             continue
@@ -3109,7 +3128,7 @@ def _supervise(spec_path):
                                  "resume from. Not starting another attempt; whatever the "
                                  "model reported stands.\n")
             except Exception as _xy_e:
-                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3112')
+                say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3131')
             break
         try:
             with open(log_path, "a") as handle:
@@ -3117,7 +3136,7 @@ def _supervise(spec_path):
                              "continuing from progress.json (attempt %d of %d)\n"
                              % (i + 2, tries))
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3120')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3139')
         argv = list(argv)
         argv[2] = RESUME_PROMPT % {
             "run_md": run_md_path,
@@ -3144,7 +3163,7 @@ def _supervise(spec_path):
             with open(progress_path, "w", encoding="utf-8") as handle:
                 json.dump(pr, handle, indent=2)
         except Exception as _xy_e:
-            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3147')
+            say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_hermes_run.py:3166')
 
 
 def main():
