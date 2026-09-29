@@ -215,6 +215,18 @@ def main():
 
     if os.path.splitext(target)[1].lower() in CODE_SUFFIXES and \
             str(os.environ.get("XYCY_SCRIPT_STEP") or "") != "1":
+        # XY-GUARDSAYSPY2 (28 Sep 2026) - the same rule, and the right thing to do instead for THIS
+        # step. MEASURED on Sean's PC, Hermes on the retaining wall and steel beam calculation steps:
+        # a step that drives no application was told to "drive the application through its own
+        # tools" - it has none - and spent several local-model turns finding another way to run the
+        # same program. Such a step has execute_code (XY-DOCSTEPPY); the XYCY engine's guard already
+        # names its equivalent, xy_run_python.
+        if str(os.environ.get("XYCY_DOC_STEP") or "") == "1":
+            sys.stderr.write(
+                "XY-WRITEGUARD: program files are not written with a file tool in this run - %s "
+                "refused. Pass the program text straight to execute_code instead: it runs it, and "
+                "whatever the program writes into outputs/ is kept.\n" % raw)
+            return 2
         sys.stderr.write(
             "XY-WRITEGUARD: this run declares no script step, so it does not write program "
             "files - %s refused. A script in a workflow is a Script Sub-Agent the person put on "

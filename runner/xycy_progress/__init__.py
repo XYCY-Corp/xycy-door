@@ -38,6 +38,7 @@ import json
 import os
 import re
 import shutil
+import sys   # XY-HOUSEGRAPH6B - the house-graph writer below uses sys.platform
 import threading
 import time
 
@@ -277,7 +278,7 @@ def _start_beat():
         _BEAT = threading.Thread(target=_beat, name="xycy-heartbeat", daemon=True)
         _BEAT.start()
     except Exception as _xy_e:
-        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:280')
+        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:281')
 
 def _emit(kind, **fields):
     """Append one event and refresh the status snapshot. Never raises."""
@@ -460,7 +461,9 @@ def house_record_fact(fact, path=None):
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(g, fh, indent=2)
         os.replace(tmp, path)
-    except Exception:
+    except Exception as _xy_e:
+        # XY-HOUSEGRAPH6B - a fact that could not be written is said, not swallowed
+        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:housewrite')
         return None
     return edge
 
@@ -565,7 +568,7 @@ def pre_tool_call(**kwargs):
     try:
         _note_shot_target(kwargs.get("args"))
     except Exception as _xy_e:
-        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:568')
+        say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_progress/__init__.py:571')
     _WAITING["on"], _WAITING["since"] = (kwargs.get("tool_name") or "a tool"), time.time()
     _COUNTS["tool_calls"] += 1
     call_id = kwargs.get("tool_call_id")

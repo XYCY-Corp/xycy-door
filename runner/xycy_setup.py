@@ -533,11 +533,27 @@ def ollama_serving_window():
     """
     info = http_json(OLLAMA_URL + "/api/ps") or {}
     for model in info.get("models") or []:
+        # XY-OLLAMAWINDOW-EMBED (28 Sep 2026) - an embedding model (the skills search's own, for one)
+        # is loaded with a small window and never runs a step. MEASURED on Sean's PC: with
+        # nomic-embed-text loaded first, this read 2,048 and every Start Ollama refused.
+        if is_embedding_model(model):
+            continue
         try:
             return int(model.get("context_length"))
         except Exception:
             continue
     return None
+
+
+_EMBED_NAMES = ("nomic-embed", "embeddinggemma", "qwen3-embedding", "mxbai-embed", "snowflake-arctic-embed",
+                "bge-m3", "bge-large", "all-minilm", "granite-embedding", "paraphrase-multilingual")
+
+
+def is_embedding_model(model):
+    """True for a model Ollama serves to turn text into vectors, not to think with."""
+    name = str((model or {}).get("name") or (model or {}).get("model") or "").lower()
+    family = str(((model or {}).get("details") or {}).get("family") or "").lower()
+    return any(name.startswith(n) for n in _EMBED_NAMES) or "embed" in name or family.endswith("bert")
 
 
 # XY-OLLAMAHERE (18 Sep 2026) - the flags that make a 64k window fit, in one place, because
@@ -1061,7 +1077,7 @@ def cmd_job(args):
                 try:
                     out.append(json.load(open(os.path.join(JOBS_DIR, name), encoding="utf-8")))
                 except Exception as _xy_e:
-                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_setup.py:1064')
+                    say_something(_xy_e, 'local-agent/mcpb/server/hermes/xycy_setup.py:1080')
         print(json.dumps({"ok": True, "jobs": out}))
         return
     try:
